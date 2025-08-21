@@ -1,0 +1,78 @@
+(function () {
+    var doc = app.activeDocument;
+
+    // Function: Check if a page has any NON-parent content
+    function pageHasNonParentContent(page) {
+        for (var i = 0; i < page.allPageItems.length; i++) {
+            var item = page.allPageItems[i];
+            if (item.isValid && item.parentPage === page && !item.hasOwnProperty("masterPageItem")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Step 1: Gather and sort all text frames by page order and position
+    var allTextFrames = [];
+
+    for (var p = 0; p < doc.pages.length; p++) {
+        var page = doc.pages[p];
+        var frames = page.textFrames;
+        for (var f = 0; f < frames.length; f++) {
+            var tf = frames[f];
+            allTextFrames.push({
+                frame: tf,
+                pageIndex: p,
+                top: tf.geometricBounds[0], // y1
+                left: tf.geometricBounds[1] // x1
+            });
+        }
+    }
+
+    // Sort: first by page, then top-to-bottom, then left-to-right
+    allTextFrames.sort(function (a, b) {
+        if (a.pageIndex !== b.pageIndex) {
+            return a.pageIndex - b.pageIndex;
+        } else if (a.top !== b.top) {
+            return a.top - b.top;
+        } else {
+            return a.left - b.left;
+        }
+    });
+
+    // Step 2: Link text frames in sorted order
+    for (var i = 0; i < allTextFrames.length - 1; i++) {
+        try {
+            allTextFrames[i].frame.nextTextFrame = allTextFrames[i + 1].frame;
+        } catch (e) {
+            $.writeln("Linking error: " + e);
+        }
+    }
+
+    // Step 3: Remove visually empty text frames (even if part of a linked thread)
+    for (var i = doc.textFrames.length - 1; i >= 0; i--) {
+        var tf = doc.textFrames[i];
+        if (!tf.isValid || !tf.parentPage) continue;
+
+        var isFromParent = tf.hasOwnProperty("masterPageItem");
+        var isEmptyVisual = tf.characters.length === 0;
+
+        if (!isFromParent && isEmptyVisual) {
+            try {
+                tf.remove();
+            } catch (e) {
+                $.writeln("Remove error: " + e);
+            }
+        }
+    }
+
+    // Step 4: Delete pages that contain only parent page content
+    for (var i = doc.pages.length - 1; i >= 0; i--) {
+        var page = doc.pages[i];
+        if (!pageHasNonParentContent(page)) {
+            page.remove();
+        }
+    }
+
+    alert("Done: Frames linked in page order, empty frames deleted, empty pages removed.");
+})();
